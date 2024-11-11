@@ -1,84 +1,121 @@
-import java.io.*;
-import java.util.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Scanner;
 
 public class MyShell {
-    public static void main(String[] args) throws java.io.IOException {
-        // commandLine allows us to see what the user will write in the commandLine
-        String commandLine;
-        // Buffered reader allows us to see what commandLine is
-        BufferedReader console = new BufferedReader(new InputStreamReader(System.in));
-        // currentDir is needed to know what directory we are currently in
-        File currentDir = new File(System.getProperty("user.dir"));
-        // history will allow us to keep track of what has been ran on the program
-        List<String> history = new ArrayList<>();
+    private static File currentDirectory = new File(System.getProperty("user.dir")); // Start in the user's current directory
+    private static List<String> commandHistory = new ArrayList<>(); // To store history of commands
+
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
 
         while (true) {
-            // Read what the user entered
-            System.out.print("mysh>");
-            commandLine = console.readLine();
+            System.out.print("mysh> ");
+            String input = scanner.nextLine();
 
-            // If the user entered a return, just loop again
-            if (commandLine.equals("")) {
-                continue;
+            // Exit on command "exit"
+            if (input.trim().equalsIgnoreCase("exit")) {
+                System.out.println("Exiting shell.");
+                break;
             }
 
-            // Add command to history
-            history.add(commandLine);
+            // If user enters "history", show the command history
+            if (input.trim().equals("history")) {
+                printHistory();
+                continue; // Skip further processing and wait for next input
+            }
 
-            // Parse the input to obtain the command and any parameters
-            String[] commandArray = commandLine.split(" ");
-            List<String> command = new ArrayList<>(Arrays.asList(commandArray));
-
-            // Handle the 'cd' command
-            if (command.get(0).equals("cd")) {
-                if (command.size() == 1) {
-                    currentDir = new File(System.getProperty("user.home"));
-                } else {
-                    File newDir = new File(currentDir, command.get(1));
-                    if (newDir.exists() && newDir.isDirectory()) {
-                        currentDir = newDir;
-                    } else {
-                        System.out.println("Invalid directory");
-                    }
+            // If user enters "!!", run the previous command from history
+            if (input.trim().equals("!!")) {
+                if (commandHistory.isEmpty()) {
+                    System.err.println("Error: No previous command to run.");
+                    continue; // Skip further processing and wait for next input
                 }
-                continue;
+                // Get the last command from history
+                input = commandHistory.get(commandHistory.size() - 1);
+                System.out.println("Running previous command: " + input);
             }
 
-            // Handle the 'history' command
-            if (command.get(0).equals("history")) {
-                for (int i = 0; i < history.size(); i++) {
-                    System.out.println(i + " " + history.get(i));
-                }
-                continue;
+            // Add the command to history
+            commandHistory.add(input);
+
+            // Split the input command into a list of strings
+            String[] parts = input.split("\\s+");
+            List<String> command = new ArrayList<>();
+
+            // Check if it's the "cd" command
+            if (parts[0].equalsIgnoreCase("cd")) {
+                handleCdCommand(parts);
+                continue; // Skip to next iteration for the next command
             }
 
-            // For Windows, add "cmd" and "/c" to the command list
+            // Create the command for ProcessBuilder
             if (System.getProperty("os.name").toLowerCase().contains("win")) {
-                command.add(0, "cmd");
-                command.add(1, "/c");
+                command.add("cmd");
+                command.add("/c");
             }
 
-            // Create a ProcessBuilder object
-            ProcessBuilder pb = new ProcessBuilder(command);
-            pb.directory(currentDir);
+            for (String part : parts) {
+                command.add(part);
+            }
+
+            // Create ProcessBuilder with the current directory
+            ProcessBuilder processBuilder = new ProcessBuilder(command);
+            processBuilder.directory(currentDirectory); // Set the current working directory for the process
 
             try {
-                // Start the process
-                Process process = pb.start();
+                Process process = processBuilder.start();
 
-                // Obtain the output stream
+                // Read the output from the process
                 BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
                 String line;
-
-                // Output the contents returned by the command
                 while ((line = reader.readLine()) != null) {
                     System.out.println(line);
                 }
 
                 // Wait for the process to complete
                 process.waitFor();
-            } catch (IOException | InterruptedException e) {
-                System.out.println("Error executing command: " + e.getMessage());
+
+            } catch (IOException e) {
+                System.err.println("Error: Invalid command or command not found.");
+            } catch (InterruptedException e) {
+                System.err.println("Error: Process was interrupted.");
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        scanner.close();
+    }
+
+    // Handle the "cd" command
+    private static void handleCdCommand(String[] parts) {
+        if (parts.length == 1 || parts[1].equals("~")) {
+            // If no argument or `cd ~`, change to the user's home directory
+            currentDirectory = new File(System.getProperty("user.home"));
+        } else {
+            // Change to the specified directory (relative or absolute path)
+            File newDirectory = new File(parts[1]);
+            if (newDirectory.isDirectory()) {
+                currentDirectory = newDirectory;
+            } else {
+                System.err.println("Error: Invalid directory.");
+            }
+        }
+        // Print the current directory after change
+        System.out.println("Current directory is now: " + currentDirectory.getAbsolutePath());
+    }
+
+    // Print the command history
+    private static void printHistory() {
+        if (commandHistory.isEmpty()) {
+            System.out.println("No commands in history.");
+        } else {
+            for (int i = 0; i < commandHistory.size(); i++) {
+                System.out.println(i + " " + commandHistory.get(i));
             }
         }
     }
